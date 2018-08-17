@@ -150,7 +150,7 @@ class TrajectoryUpdater implements Runnable {
         double rightOut = trajPid.getValue(getRightDistance.get(), rightTP.getPos(), rightTP.getVel(), rightTP.getAcc());
         double headingOffset = headingPid.getValue(getHeading.get(), leftTP.getHeading());
         rightOut += headingOffset;
-        leftOut += headingOffset;
+        leftOut -= headingOffset;
         
         setLeftPercent.accept(leftOut);
         setRightPercent.accept(rightOut);
