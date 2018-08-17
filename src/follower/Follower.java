@@ -9,14 +9,13 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import edu.wpi.first.wpilibj.Notifier;
+import path.TrajectoryPoint;
 import pid.PID;
 import pid.TrajPID;
 
 public class Follower {
     private Consumer<Double> setLeftPercent;
     private Consumer<Double> setRightPercent;
-    private Supplier<Double> getLeftVelocity;
-    private Supplier<Double> getRightVelocity;
     private Supplier<Double> getLeftDistance;
     private Supplier<Double> getRightDistance;
     private Supplier<Double> getHeading;
@@ -27,13 +26,10 @@ public class Follower {
     private TrajPID trajPid;
     private PID headingPid;
 
-    public Follower(Consumer<Double> setLeftPercent, Consumer<Double> setRightPercent, Supplier<Double> getLeftVelocity,
-            Supplier<Double> getRightVelocity, Supplier<Double> getLeftDistance, Supplier<Double> getRightDistance,
+    public Follower(Consumer<Double> setLeftPercent, Consumer<Double> setRightPercent, Supplier<Double> getLeftDistance, Supplier<Double> getRightDistance,
             Supplier<Double> getHeading, TrajPID trajPid, PID headingPid) {
         this.setLeftPercent = setLeftPercent;
         this.setRightPercent = setRightPercent;
-        this.getLeftVelocity = getLeftVelocity;
-        this.getRightVelocity = getRightVelocity;
         this.getLeftDistance = getLeftDistance;
         this.getRightDistance = getRightDistance;
         this.getHeading = getHeading;
@@ -50,7 +46,7 @@ public class Follower {
     }
 
     public void start(double period) {
-        TrajectoryUpdater tu = new TrajectoryUpdater(setLeftPercent, setRightPercent, getLeftVelocity, getRightVelocity, getLeftDistance, getRightDistance, getHeading, leftPath, rightPath, trajPid, headingPid);
+        TrajectoryUpdater tu = new TrajectoryUpdater(setLeftPercent, setRightPercent, getLeftDistance, getRightDistance, getHeading, leftPath, rightPath, trajPid, headingPid);
         tu.reset();
         thread = new Notifier(tu);
         thread.startPeriodic(period);
@@ -73,22 +69,16 @@ class TrajectoryUpdater implements Runnable {
     private List<TrajectoryPoint> rightTraj;
     private Consumer<Double> setLeftPercent;
     private Consumer<Double> setRightPercent;
-    private Supplier<Double> getLeftVelocity;
-    private Supplier<Double> getRightVelocity;
     private Supplier<Double> getLeftDistance;
     private Supplier<Double> getRightDistance;
     private Supplier<Double> getHeading;
     private TrajPID trajPid;
     private PID headingPid;
 
-
-    public TrajectoryUpdater(Consumer<Double> setLeftPercent, Consumer<Double> setRightPercent,
-            Supplier<Double> getLeftVelocity, Supplier<Double> getRightVelocity, Supplier<Double> getLeftDistance,
+    public TrajectoryUpdater(Consumer<Double> setLeftPercent, Consumer<Double> setRightPercent, Supplier<Double> getLeftDistance,
             Supplier<Double> getRightDistance, Supplier<Double> getHeading, String leftPath, String rightPath, TrajPID trajPid, PID headingPid) {
         this.setLeftPercent = setLeftPercent;
         this.setRightPercent = setRightPercent;
-        this.getLeftVelocity = getLeftVelocity;
-        this.getRightVelocity = getRightVelocity;
         this.getLeftDistance = getLeftDistance;
         this.getRightDistance = getRightDistance;
         this.getHeading = getHeading;
@@ -164,49 +154,6 @@ class TrajectoryUpdater implements Runnable {
         
         setLeftPercent.accept(leftOut);
         setRightPercent.accept(rightOut);
-    }
-
-}
-
-class TrajectoryPoint {
-    private double time;
-    private double pos;
-    private double vel;
-    private double acc;
-    private double heading;
-    private double timeStamp;
-
-    public TrajectoryPoint(double time, double pos, double vel, double acc, double heading, double timeStamp) {
-        this.time = time;
-        this.pos = pos;
-        this.vel = vel;
-        this.acc = acc;
-        this.heading = heading;
-        this.timeStamp = timeStamp;
-    }
-
-    public double getTime() {
-        return time;
-    }
-
-    public double getPos() {
-        return pos;
-    }
-
-    public double getVel() {
-        return vel;
-    }
-
-    public double getAcc() {
-        return acc;
-    }
-
-    public double getHeading() {
-        return heading;
-    }
-
-    public double getTimeStamp() {
-        return timeStamp;
     }
 
 }
