@@ -9,22 +9,23 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import edu.wpi.first.wpilibj.Notifier;
+import log.Logger;
 import path.TrajectoryPoint;
 import pid.PID;
 import pid.TrajPID;
 
 public class Follower {
-    private Consumer<Double> setLeftPercent;
-    private Consumer<Double> setRightPercent;
-    private Supplier<Double> getLeftDistance;
-    private Supplier<Double> getRightDistance;
-    private Supplier<Double> getHeading;
+    protected Consumer<Double> setLeftPercent;
+    protected Consumer<Double> setRightPercent;
+    protected Supplier<Double> getLeftDistance;
+    protected Supplier<Double> getRightDistance;
+    protected Supplier<Double> getHeading;
 
     private Notifier thread;
-    private String leftPath;
-    private String rightPath;
-    private TrajPID trajPid;
-    private PID headingPid;
+    protected String leftPath;
+    protected String rightPath;
+    protected TrajPID trajPid;
+    protected PID headingPid;
 
     public Follower(Consumer<Double> setLeftPercent, Consumer<Double> setRightPercent, Supplier<Double> getLeftDistance, Supplier<Double> getRightDistance,
             Supplier<Double> getHeading, TrajPID trajPid, PID headingPid) {
@@ -45,11 +46,11 @@ public class Follower {
         rightPath = filePath;
     }
 
-    public void start(double period) {
-        TrajectoryUpdater tu = new TrajectoryUpdater(setLeftPercent, setRightPercent, getLeftDistance, getRightDistance, getHeading, leftPath, rightPath, trajPid, headingPid);
+    public void start() {
+        TrajectoryUpdater tu = new TrajectoryUpdater(this);
         tu.reset();
         thread = new Notifier(tu);
-        thread.startPeriodic(period);
+        thread.startPeriodic(tu.getTimeStep()/1000.0);
     }
 
     public void stop() {
@@ -62,44 +63,33 @@ class TrajectoryUpdater implements Runnable {
 
     private long time;
     private long systemTimeAtStart;
-    private long timeStamp;
-    private String leftPath;
-    private String rightPath;
+    private long timeStep;
     private List<TrajectoryPoint> leftTraj;
     private List<TrajectoryPoint> rightTraj;
-    private Consumer<Double> setLeftPercent;
-    private Consumer<Double> setRightPercent;
-    private Supplier<Double> getLeftDistance;
-    private Supplier<Double> getRightDistance;
-    private Supplier<Double> getHeading;
-    private TrajPID trajPid;
-    private PID headingPid;
+    
+    private Follower follower;
 
-    public TrajectoryUpdater(Consumer<Double> setLeftPercent, Consumer<Double> setRightPercent, Supplier<Double> getLeftDistance,
-            Supplier<Double> getRightDistance, Supplier<Double> getHeading, String leftPath, String rightPath, TrajPID trajPid, PID headingPid) {
-        this.setLeftPercent = setLeftPercent;
-        this.setRightPercent = setRightPercent;
-        this.getLeftDistance = getLeftDistance;
-        this.getRightDistance = getRightDistance;
-        this.getHeading = getHeading;
-        this.leftPath = leftPath;
-        this.rightPath = rightPath;
-        this.trajPid = trajPid;
-        this.headingPid = headingPid;
+    public TrajectoryUpdater(Follower follower) {
+        this.follower = follower;
     }
 
     public void reset() {
         systemTimeAtStart = System.currentTimeMillis();
         time = 0;
+        clearAndLoadTrajectories();
+        getTimeStep();
+    }
+
+    private void clearAndLoadTrajectories() {
         leftTraj.clear();
         rightTraj.clear();
-
+        
         BufferedReader reader = null;
 
         try {
-            reader = new BufferedReader(new FileReader(leftPath));
+            reader = new BufferedReader(new FileReader(follower.leftPath));
         } catch (FileNotFoundException e) {
-            e.printStackTrace();
+            Logger.write("ERROR: ", "Left path file is invalid");
         }
 
         String line;
@@ -112,15 +102,15 @@ class TrajectoryUpdater implements Runnable {
                 leftTraj.add(tp);
             }
         } catch (NumberFormatException e) {
-            e.printStackTrace();
+            Logger.write("ERROR: ", "Invalid number while reading the left trajectory");
         } catch (IOException e) {
             e.printStackTrace();
         }
 
         try {
-            reader = new BufferedReader(new FileReader(rightPath));
+            reader = new BufferedReader(new FileReader(follower.rightPath));
         } catch (FileNotFoundException e) {
-            e.printStackTrace();
+            Logger.write("ERROR: ", "Right path file is invalid");
         }
 
         try {
@@ -132,28 +122,33 @@ class TrajectoryUpdater implements Runnable {
                 rightTraj.add(tp);
             }
         } catch (NumberFormatException e) {
-            e.printStackTrace();
+            Logger.write("ERROR: ", "Invalid number while reading the right trajectory");
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
-
+    
     @Override
     public void run() {
         time = System.currentTimeMillis() - systemTimeAtStart;
-        long index = time / timeStamp;
+        long index = time / timeStep;
         
         TrajectoryPoint leftTP = leftTraj.get((int) index);
         TrajectoryPoint rightTP = rightTraj.get((int) index);
         
-        double leftOut = trajPid.getValue(getLeftDistance.get(), leftTP.getPos(), leftTP.getVel(), leftTP.getAcc());
-        double rightOut = trajPid.getValue(getRightDistance.get(), rightTP.getPos(), rightTP.getVel(), rightTP.getAcc());
-        double headingOffset = headingPid.getValue(getHeading.get(), leftTP.getHeading());
+        double leftOut = follower.trajPid.getValue(follower.getLeftDistance.get(), leftTP.getPos(), leftTP.getVel(), leftTP.getAcc());
+        double rightOut = follower.trajPid.getValue(follower.getRightDistance.get(), rightTP.getPos(), rightTP.getVel(), rightTP.getAcc());
+        double headingOffset = follower.headingPid.getValue(follower.getHeading.get(), leftTP.getHeading());
         rightOut += headingOffset;
         leftOut -= headingOffset;
         
-        setLeftPercent.accept(leftOut);
-        setRightPercent.accept(rightOut);
+        follower.setLeftPercent.accept(leftOut);
+        follower.setRightPercent.accept(rightOut);
+    }
+    
+    public long getTimeStep() {
+        timeStep = (long) leftTraj.get(0).getTimeStamp();
+        return timeStep;
     }
 
 }
