@@ -1,9 +1,6 @@
 package follower;
 
-import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -12,11 +9,12 @@ import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
+import auto.AutoPath;
+import auto.TimeRangedCommand;
 import edu.wpi.first.wpilibj.Notifier;
-import log.Logger;
-import path.TrajectoryPoint;
 import pid.PID;
 import pid.TrajPID;
+import trajectory.TrajectoryPoint;
 
 public class Follower {
   protected Consumer<Double> setLeftPercent;
@@ -26,8 +24,7 @@ public class Follower {
   protected Supplier<Double> getHeading;
   
   private Notifier thread;
-  protected String leftPath;
-  protected String rightPath;
+  protected AutoPath autoPath;
   protected TrajPID trajPid;
   protected PID headingPid;
   
@@ -44,19 +41,15 @@ public class Follower {
     this.headingPid = headingPid;
   }
   
-  public void setLeftTrajectory(String filePath) {
-    leftPath = filePath;
-  }
-  
-  public void setRightTrajectory(String filePath) {
-    rightPath = filePath;
+  public void setAutoPath(AutoPath autoPath) {
+	  this.autoPath = autoPath;
   }
   
   public void start() {
     TrajectoryUpdater tu = new TrajectoryUpdater(this);
     tu.reset();
     thread = new Notifier(tu);
-    thread.startPeriodic(tu.getTimeStep() / 1000.0 / 2.0);
+    thread.startPeriodic(tu.getTimeStep() / 2.0);
   }
   
   public void stop() {
@@ -69,9 +62,10 @@ class TrajectoryUpdater implements Runnable {
   
   private long time;
   private long systemTimeAtStart;
-  private long timeStep;
+  private double timeStep;
   private List<TrajectoryPoint> leftTraj;
   private List<TrajectoryPoint> rightTraj;
+  private TimeRangedCommand[] commands;
   
   private FileWriter fw;
   
@@ -86,7 +80,7 @@ class TrajectoryUpdater implements Runnable {
   public void reset() {
     systemTimeAtStart = System.currentTimeMillis();
     time = 0;
-    clearAndLoadTrajectories();
+    clearAndLoad();
     getTimeStep();
     new File(follower.debugFilePath).delete();
     try {
@@ -98,64 +92,29 @@ class TrajectoryUpdater implements Runnable {
     }
   }
   
-  private void clearAndLoadTrajectories() {
-    leftTraj.clear();
-    rightTraj.clear();
-    
-    BufferedReader reader = null;
-    
-    try {
-      reader = new BufferedReader(new FileReader(follower.leftPath));
-    } catch (FileNotFoundException e) {
-      Logger.write("ERROR: ", "Left path file is invalid");
-    }
-    
-    String line;
-    try {
-      while ((line = reader.readLine()) != null) {
-        String[] s = line.split(",");
-        TrajectoryPoint tp = new TrajectoryPoint(Double.parseDouble(s[0]), Double.parseDouble(s[1]),
-            Double.parseDouble(s[2]), Double.parseDouble(s[3]), Double.parseDouble(s[4]), Double.parseDouble(s[5]));
-        leftTraj.add(tp);
-      }
-    } catch (NumberFormatException e) {
-      Logger.write("ERROR: ", "Invalid number while reading the left trajectory");
-    } catch (IOException e) {
-      e.printStackTrace();
-    }
-    
-    try {
-      reader = new BufferedReader(new FileReader(follower.rightPath));
-    } catch (FileNotFoundException e) {
-      Logger.write("ERROR: ", "Right path file is invalid");
-    }
-    
-    try {
-      while ((line = reader.readLine()) != null) {
-        String[] s = line.split(",");
-        TrajectoryPoint tp = new TrajectoryPoint(Double.parseDouble(s[0]), Double.parseDouble(s[1]),
-            Double.parseDouble(s[2]), Double.parseDouble(s[3]), Double.parseDouble(s[4]), Double.parseDouble(s[5]));
-        rightTraj.add(tp);
-      }
-    } catch (NumberFormatException e) {
-      Logger.write("ERROR: ", "Invalid number while reading the right trajectory");
-    } catch (IOException e) {
-      e.printStackTrace();
-    }
+  private void clearAndLoad() {
+    leftTraj = Arrays.asList(follower.autoPath.getLeftTrajectory());
+    rightTraj = Arrays.asList(follower.autoPath.getRightTrajectory());
+    commands = follower.autoPath.getCommands();
   }
   
   @Override
   public void run() {   
     time = System.currentTimeMillis() - systemTimeAtStart;
+    
+    for(TimeRangedCommand c : commands) {
+    	c.tryAtTime(time);
+    }
+    
     int index = (int) (time / timeStep);
     
     TrajectoryPoint leftTP = leftTraj.get(index >= leftTraj.size() ? leftTraj.size()-1 : index);
     TrajectoryPoint rightTP = rightTraj.get(index >= rightTraj.size() ? rightTraj.size()-1 : index);
 
-    double leftOut = follower.trajPid.getValue(follower.getLeftDistance.get(), leftTP.getPos(), leftTP.getVel(),
-        leftTP.getAcc());
-    double rightOut = follower.trajPid.getValue(follower.getRightDistance.get(), rightTP.getPos(), rightTP.getVel(),
-        rightTP.getAcc());
+    double leftOut = follower.trajPid.getValue(follower.getLeftDistance.get(), leftTP.getPosition(), leftTP.getVelocity(),
+        leftTP.getAcceleration());
+    double rightOut = follower.trajPid.getValue(follower.getRightDistance.get(), rightTP.getPosition(), rightTP.getVelocity(),
+        rightTP.getAcceleration());
     double headingOffset = follower.headingPid.getValue(follower.getHeading.get(), leftTP.getHeading());
     rightOut += headingOffset;
     leftOut -= headingOffset;
@@ -166,23 +125,23 @@ class TrajectoryUpdater implements Runnable {
     //DEBUG
     try {
       fw.write(follower.getLeftDistance.get() + ", ");
-      fw.write(leftTP.getPos() + ", ");
-      fw.write(leftTP.getPos() - follower.getLeftDistance.get() + ", ");
-      fw.write(leftTP.getVel() + ", ");
-      fw.write(leftTP.getAcc() + ", ");
+      fw.write(leftTP.getPosition() + ", ");
+      fw.write(leftTP.getPosition() - follower.getLeftDistance.get() + ", ");
+      fw.write(leftTP.getVelocity() + ", ");
+      fw.write(leftTP.getAcceleration() + ", ");
       fw.write(follower.getRightDistance.get() + ", ");
-      fw.write(rightTP.getPos() + ", ");
-      fw.write(rightTP.getPos() - follower.getRightDistance.get() + ", ");
-      fw.write(rightTP.getVel() + ", ");
-      fw.write(rightTP.getAcc() + ",\n");
+      fw.write(rightTP.getPosition() + ", ");
+      fw.write(rightTP.getPosition() - follower.getRightDistance.get() + ", ");
+      fw.write(rightTP.getVelocity() + ", ");
+      fw.write(rightTP.getAcceleration() + ",\n");
     } catch (IOException e) {
       // TODO Auto-generated catch block
       e.printStackTrace();
     }
   }
   
-  public long getTimeStep() {
-    timeStep = (long) leftTraj.get(0).getTimeStamp();
+  public double getTimeStep() {
+    timeStep = leftTraj.get(0).getTimeStep();
     return timeStep;
   }
   
